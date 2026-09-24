@@ -1,5 +1,6 @@
 # Redline (Open Source)
 
+[![CI](https://github.com/bryanpauze/redline-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/bryanpauze/redline-oss/actions/workflows/ci.yml)
 ![tests](https://img.shields.io/badge/tests-11%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)

@@ -315,8 +315,7 @@ class MockTarget(Target):
 def target_from_spec(spec: str, *, api_key: str | None = None, url: str | None = None,
                      temperature: float | None = 0.0) -> Target:
     """Build a target from a 'provider:model' string, e.g. 'ollama:hermes3',
-    'groq:llama-3.1-70b', 'anthropic:claude-opus-5', 'completion:local'. Used for the
-    --target-style CLIs and to give an agent team its reasoning brain."""
+    'groq:llama-3.1-70b', 'anthropic:claude-opus-5', 'completion:local'. Used for the --target-style CLIs (a judge model, a completion endpoint, and so on)."""
     provider, _, model = spec.partition(":")
     model = model or "default"
     if provider == "mock":

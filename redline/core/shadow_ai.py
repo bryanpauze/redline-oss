@@ -1,6 +1,6 @@
 """Behavioral shadow-AI classifier: is a piece of text likely AI-authored?
 
-Ported in spirit from control-plane's control_plane/shadow_ai/classifiers.py. This
+This
 is a corroborating signal, not proof. The egress-log analyzer is the strong,
 network-level shadow-AI detector; this is a cheap content-level heuristic for when
 you only have text (a document, a commit message, a support reply) and want a hint

@@ -160,7 +160,7 @@ register(Probe(
     detect=_routed_to_sink,
     remediation=("Tool results are untrusted data, never instructions. Never place a secret into "
                  "a tool argument because a tool result asked; gate externally-delivering tools "
-                 "behind an egress allowlist and human approval (see redline ifc-cert)."),
+                 "behind an egress allowlist and human approval (see redline exfil-cert)."),
 ))
 
 

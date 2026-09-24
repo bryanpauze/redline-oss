@@ -1,8 +1,7 @@
 """Scan-profile bundles with golden eval sets.
 
-Ported in spirit from control-plane's control_plane/personas/. A profile packages,
-for a target type, which probe families to run, a recommended findings-gating
-policy, and a golden eval set. The golden set is the important part: it is a labeled
+A profile packages, for a target type, the probe families to run and a golden
+eval set. The golden set is the important part: it is a labeled
 dataset that tests REDLINE'S OWN detectors for false positives and false negatives,
 so a change to a detector is caught before it ships. That is detector regression
 control, the thing a security scanner needs so its own findings stay trustworthy.
