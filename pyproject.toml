@@ -1,0 +1,49 @@
+[project]
+name = "redline-oss"
+dynamic = ["version"]
+description = "Open-source security scanner for LLMs, agents, and MCP servers: prompt injection, jailbreaks, leakage, and more, with deterministic canary-based detection."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Bryan Pauze" }]
+keywords = ["llm", "security", "prompt-injection", "jailbreak", "red-team", "mcp", "ai-security", "oss"]
+dependencies = []   # stdlib only, on purpose
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Intended Audience :: Developers",
+]
+
+[project.urls]
+Repository = "https://github.com/bryanpauze/redline-oss"
+Issues = "https://github.com/bryanpauze/redline-oss/issues"
+
+[project.scripts]
+redline = "redline.cli:main"
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+anthropic = ["anthropic>=0.40"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "redline.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["redline*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "B008", "E701", "E702"]

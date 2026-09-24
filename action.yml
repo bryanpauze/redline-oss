@@ -1,0 +1,104 @@
+name: Redline LLM security scan
+description: Scan an LLM endpoint, model, or MCP server for prompt injection, jailbreaks, and secret leakage. Emits SARIF for code scanning.
+author: Bryan Pauze
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  target:
+    description: "mock | ollama | openai | anthropic | http | mcp"
+    required: true
+  model:
+    description: Model name for the target
+    required: false
+    default: ""
+  url:
+    description: Endpoint URL (target=http)
+    required: false
+    default: ""
+  command:
+    description: MCP server launch command (target=mcp)
+    required: false
+    default: ""
+  trials:
+    description: Trials per probe (confidence intervals when > 1)
+    required: false
+    default: "1"
+  fail-on:
+    description: "any | new | none"
+    required: false
+    default: "any"
+  baseline:
+    description: Path to a previous JSON report; with fail-on=new, only new findings fail
+    required: false
+    default: ""
+  sarif:
+    description: Where to write SARIF
+    required: false
+    default: redline.sarif
+  sarif-anchor:
+    description: Repo file that SARIF alerts attach to
+    required: false
+    default: redline.target
+  json:
+    description: Where to write the JSON report (usable as the next baseline)
+    required: false
+    default: redline.json
+  html:
+    description: Where to write the HTML report
+    required: false
+    default: redline.html
+
+outputs:
+  exit-code:
+    description: 0 clean / 1 findings (per fail-on) / 2 inconclusive
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Redline
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        WANT_ANTHROPIC: ${{ inputs.target == 'anthropic' }}
+      run: |
+        if [ "$WANT_ANTHROPIC" = "true" ]; then
+          pip install --quiet "${ACTION_PATH}[anthropic]"
+        else
+          pip install --quiet "${ACTION_PATH}"
+        fi
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        IN_TARGET: ${{ inputs.target }}
+        IN_MODEL: ${{ inputs.model }}
+        IN_URL: ${{ inputs.url }}
+        IN_COMMAND: ${{ inputs.command }}
+        IN_TRIALS: ${{ inputs.trials }}
+        IN_FAIL_ON: ${{ inputs.fail-on }}
+        IN_BASELINE: ${{ inputs.baseline }}
+        IN_SARIF: ${{ inputs.sarif }}
+        IN_ANCHOR: ${{ inputs.sarif-anchor }}
+        IN_JSON: ${{ inputs.json }}
+        IN_HTML: ${{ inputs.html }}
+      run: |
+        args=(scan --target "$IN_TARGET" --trials "$IN_TRIALS" --fail-on "$IN_FAIL_ON"
+              --sarif "$IN_SARIF" --sarif-anchor "$IN_ANCHOR" --json "$IN_JSON" --out "$IN_HTML")
+        [ -n "$IN_MODEL" ]    && args+=(--model "$IN_MODEL")
+        [ -n "$IN_URL" ]      && args+=(--url "$IN_URL")
+        [ -n "$IN_COMMAND" ]  && args+=(--command "$IN_COMMAND")
+        [ -n "$IN_BASELINE" ] && args+=(--baseline "$IN_BASELINE")
+        set +e
+        redline "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit $code
