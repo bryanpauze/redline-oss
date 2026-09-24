@@ -5,6 +5,8 @@
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![edition](https://img.shields.io/badge/edition-OSS-6f42c1)
 
+![Redline demo](demo/redline.gif)
+
 Redline throws a batch of adversarial probes at an LLM and tells you where it breaks. It covers prompt injection, jailbreaks, leaked system prompts, stolen credentials, poisoned MCP tools, unbounded consumption, insecure output handling, and PII extraction. You give it a model, an API endpoint, or an MCP server. You get back a graded report you can drop into CI.
 
 This is the open-source community edition. It is stdlib-only Python, with no framework to learn and no service to stand up before you can run a scan.
