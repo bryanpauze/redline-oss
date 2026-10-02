@@ -18,8 +18,14 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Lint
         run: ruff check .
-      - name: Tests
-        run: python tests/test_redline.py
+      - name: Type-check
+        run: mypy redline
+      - name: Security — SAST (bandit)
+        run: bandit -r redline -c pyproject.toml -q
+      - name: Security — secret scan (detect-secrets)
+        run: detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
+      - name: Tests (with coverage)
+        run: pytest -q --cov=redline --cov-report=term-missing --cov-fail-under=55
       - name: Smoke — scan (mock)
         run: redline scan --target mock --quiet || test $? -eq 1
       - name: Smoke — coverage matrix

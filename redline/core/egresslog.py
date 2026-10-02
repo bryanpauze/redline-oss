@@ -179,7 +179,7 @@ def analyze_lines(lines) -> dict:
             if path:
                 e["paths"].add(path.split("?")[0][:80])
         else:
-            e = providers.setdefault(name, {"hits": 0, "hosts": set(), "actors": set()})
+            e = providers.setdefault(name, {"hits": 0, "hosts": set(), "actors": set()})  # type: ignore[arg-type]  # name non-None here
             e["hits"] += 1
             e["hosts"].add(host)
             if actor:

@@ -27,7 +27,8 @@ Issues = "https://github.com/bryanpauze/redline-oss/issues"
 redline = "redline.cli:main"
 
 [project.optional-dependencies]
-dev = ["ruff>=0.6"]
+dev = ["ruff>=0.6", "pytest>=8", "pytest-cov>=5",
+       "mypy>=1.10", "bandit[toml]>=1.7", "detect-secrets>=1.4"]
 anthropic = ["anthropic>=0.40"]
 
 [build-system]
@@ -39,6 +40,32 @@ version = {attr = "redline.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["redline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # optional extras (anthropic, ...) have no stubs
+warn_unused_ignores = true
+warn_redundant_casts = true
+exclude = ["redline/fixtures/"]
+
+[tool.bandit]
+# redline is a security scanner: it deliberately does things bandit flags.
+# Secrets are owned by detect-secrets (with a baseline), not bandit, so B105 is
+# off here. The vulnerable MCP fixture is intentionally insecure -- don't scan it.
+exclude_dirs = ["redline/fixtures", "tests"]
+skips = [
+  "B101",  # asserts document/enforce invariants (mypy-narrowing)
+  "B105",  # "hardcoded passwords" are probe/golden attack payloads; secrets -> detect-secrets
+  "B110",  # try/except/pass: a probe failure must never abort a scan
+  "B311",  # random is for adversarial fuzzing/seeding, never for crypto
+  "B310",  # urllib is deliberate outbound to targets; SSRF handled by egress.guard_resolved
+  "B404",  # subprocess import is required to launch stdio MCP servers
+  "B603",  # subprocess is called with shell=False and an argv list, by design
+  "B613",  # covert-channel probes embed zero-width/homoglyph unicode on purpose
+]
 
 [tool.ruff]
 line-length = 100

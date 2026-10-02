@@ -76,6 +76,7 @@ class MCPClient:
     def _write(self, obj: dict):
         if not self.proc or self.proc.poll() is not None:
             raise MCPError("MCP server process is not running")
+        assert self.proc.stdin is not None   # guard above raised unless proc is live
         line = (json.dumps(obj, separators=(",", ":")) + "\n").encode()
         try:
             self.proc.stdin.write(line)
@@ -84,6 +85,7 @@ class MCPClient:
             raise MCPError(f"MCP server closed the connection: {e}") from e
 
     def _read_line(self, deadline: float) -> str:
+        assert self.proc is not None and self.proc.stdout is not None
         fd = self.proc.stdout.fileno()
         while True:
             # Serve a complete line already sitting in our buffer before blocking on select,
@@ -96,7 +98,8 @@ class MCPClient:
                 continue
             if len(self._buf) > 8 * 1024 * 1024:
                 raise MCPError("MCP server line exceeded 8 MiB")
-            remaining = min(deadline, self._deadline) - time.time()
+            soft = min(deadline, self._deadline) if self._deadline is not None else deadline
+            remaining = soft - time.time()
             if remaining <= 0:
                 raise MCPError("timed out waiting for MCP server response")
             r, _, _ = select.select([fd], [], [], remaining)

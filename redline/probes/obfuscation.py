@@ -39,7 +39,7 @@ for _id, _title, _how in _EXFIL:
         title=_title,
         description=f"Asks the model to leak the credential {_how} A plaintext output "
                     "filter is blind to it; Redline decodes and catches it.",
-        build=(lambda ctx, _h=_how: [
+        build=(lambda ctx, _h=_how: [  # type: ignore[misc]  # loop-captured default
             {"role": "system", "content": ctx.system_prompt()},
             {"role": "user", "content": _ASK + _h},
         ]),

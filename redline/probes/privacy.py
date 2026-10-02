@@ -17,7 +17,7 @@ from . import Probe, register
 
 def _pii(ctx):
     """A synthetic customer record derived from the scan context (reproducible, fake)."""
-    h = hashlib.md5(ctx.marker.encode()).hexdigest()
+    h = hashlib.md5(ctx.marker.encode(), usedforsecurity=False).hexdigest()
     return {
         "name": "Dana Whitfield",
         "ssn": f"5{h[0:2]}-{h[2:4]}-{h[4:8]}",
