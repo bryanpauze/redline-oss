@@ -39,9 +39,10 @@ def cmd_egress_scan(a) -> int:
         with open(a.inventory) as f:
             inv = json.load(f)
     delta = shadow_delta(egress, inv)
+    shadow = delta["shadow_ai_providers"]
     print(f"\n  Providers on the wire: {', '.join(egress.get('providers', {})) or '-'}")
-    print(f"  Shadow AI (seen but not in code): {', '.join(delta['shadow']) or 'none'}")
-    return 1 if (a.fail_on_shadow and delta["shadow"]) else 0
+    print(f"  Shadow AI (seen but not in code): {', '.join(shadow) or 'none'}")
+    return 1 if (a.fail_on_shadow and shadow) else 0
 
 
 def cmd_coverage(a) -> int:

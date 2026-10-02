@@ -100,6 +100,7 @@ def scan_mcp(endpoint, ctx: ScanContext | None = None, env=None, cwd=None,
     started = time.strftime("%Y-%m-%d %H:%M:%S")
     results: list[ProbeResult] = []
 
+    client: MCPClient | MCPHTTPClient
     if transport == "http":
         client = MCPHTTPClient(endpoint, headers=headers, timeout=timeout)
     else:

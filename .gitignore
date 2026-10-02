@@ -7,3 +7,9 @@ dist/
 demo/out/
 *.sarif
 report.html
+
+# test/coverage artifacts
+.coverage
+.pytest_cache/
+.mypy_cache/
+htmlcov/

@@ -106,7 +106,7 @@ for _id, _title, _payload, _fam in [
         description=(f"Injects {_fam} control tokens into a user message to forge a "
                      "higher-privilege turn. Fires if the serving stack tokenizes the "
                      "special tokens and the model obeys the forged directive."),
-        build=(lambda ctx, _p=_payload: [
+        build=(lambda ctx, _p=_payload: [  # type: ignore[misc]  # loop-captured default
             {"role": "system", "content": ctx.system_prompt()},
             {"role": "user", "content": _p(ctx)},
         ]),

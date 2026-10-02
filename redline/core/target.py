@@ -46,7 +46,7 @@ class OllamaTarget(Target):
     temperature: float | None = 0.0   # None = model default; >0 for multi-trial sampling
 
     @property
-    def name(self) -> str:
+    def name(self) -> str:  # type: ignore[override]  # base declares name as a field
         return f"ollama:{self.model}"
 
     def send(self, messages: list[dict]) -> str:
@@ -80,11 +80,11 @@ class OpenAICompatTarget(Target):
     label: str | None = None   # serving-stack name for reporting (e.g. "vllm", "groq")
 
     @property
-    def name(self) -> str:
+    def name(self) -> str:  # type: ignore[override]  # base declares name as a field
         return f"{self.label or 'http'}:{self.model}"
 
     def send(self, messages: list[dict]) -> str:
-        payload = {"model": self.model, "messages": messages}
+        payload: dict[str, object] = {"model": self.model, "messages": messages}
         if self.temperature is not None:
             payload["temperature"] = self.temperature
         body = json.dumps(payload).encode()
@@ -176,7 +176,7 @@ class TextCompletionTarget(Target):
     max_tokens: int = 512
 
     @property
-    def name(self) -> str:
+    def name(self) -> str:  # type: ignore[override]  # base declares name as a field
         return f"completion:{self.model}"
 
     def send(self, messages: list[dict]) -> str:
@@ -222,7 +222,7 @@ class AnthropicTarget(Target):
     max_tokens: int = 16000
 
     @property
-    def name(self) -> str:
+    def name(self) -> str:  # type: ignore[override]  # base declares name as a field
         return f"anthropic:{self.model}"
 
     def _client(self):

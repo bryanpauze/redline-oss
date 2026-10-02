@@ -59,16 +59,22 @@ class LLMJudge(Validator):
         m = _FIRST.match(verdict.strip())
         # Decide on the FIRST word only: "No, nothing was leaked" must read as NO,
         # not match "leaked" later in the sentence.
-        return bool(m) and m.group(1).lower() in ("yes", "true", "confirmed")
+        return m is not None and m.group(1).lower() in ("yes", "true", "confirmed")
 
 
 def build_judge(spec: str | None):
-    """spec like 'ollama:llama3.1:8b' or 'http:...' -> an LLMJudge, or None."""
+    """Build an independent-validator judge from a provider spec, or None.
+
+    Accepts any 'provider:model' the core target builder understands
+    ('ollama:llama3.1:8b', 'openai:gpt-4o-mini', 'anthropic:claude-...', a
+    serving-stack preset like 'groq:...', 'completion:...'), plus the
+    'http:<url>' shorthand for a bare OpenAI-compatible endpoint. Previously
+    only 'ollama:' and 'http:' were handled and every other provider raised.
+    """
     if not spec:
         return None
-    from .target import OllamaTarget, OpenAICompatTarget
-    if spec.startswith("ollama:"):
-        return LLMJudge(OllamaTarget(model=spec.split(":", 1)[1]))
+    from .target import OpenAICompatTarget, target_from_spec
     if spec.startswith("http:"):
+        # http:<url> shorthand -- the remainder of the spec is the endpoint URL
         return LLMJudge(OpenAICompatTarget(url=spec.split(":", 1)[1]))
-    raise ValueError(f"unknown judge spec: {spec}")
+    return LLMJudge(target_from_spec(spec))
