@@ -25,7 +25,7 @@ jobs:
       - name: Security — secret scan (detect-secrets)
         run: detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
       - name: Tests (with coverage)
-        run: pytest -q --cov=redline --cov-report=term-missing --cov-fail-under=55
+        run: pytest -q --cov=redline --cov-report=term-missing --cov-fail-under=66
       - name: Smoke — scan (mock)
         run: redline scan --target mock --quiet || test $? -eq 1
       - name: Smoke — coverage matrix
