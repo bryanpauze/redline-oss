@@ -17,7 +17,7 @@ jobs:
           V=$(python -c "import redline; print(redline.__version__)")
           T="${GITHUB_REF_NAME#v}"
           test "$V" = "$T" || { echo "tag $T != version $V"; exit 1; }
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
   pypi:
