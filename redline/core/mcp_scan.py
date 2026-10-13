@@ -15,8 +15,11 @@ No real harm is produced: canaries and benign markers are used throughout.
 """
 from __future__ import annotations
 
+import ipaddress
+import json
 import re
 import time
+import urllib.parse
 
 from ..probes import ScanContext
 from .collector import EgressCollector
@@ -63,23 +66,66 @@ def _pr(pid, category, severity, title, description, remediation,
         verdict=("confirmed" if vulnerable else ("error" if error else "clean")))
 
 
+def _split_identifiers(text: str) -> str:
+    """get_config / readCustomerRecords / x.y-z -> word-separated, so \\b-anchored
+    keyword patterns see identifier parts (\\b treats '_' as a word character)."""
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
+    return re.sub(r"[_\-.]+", " ", text)
+
+
 def _tool_blob(t: dict) -> str:
-    import json as _j
-    return " ".join([t.get("name", ""), t.get("description", ""),
-                     _j.dumps(t.get("inputSchema", {}))])
+    """Name + description + schema, in raw form and identifier-split form, so both
+    'read_file' and 'get_config' -> 'get config' match the keyword patterns."""
+    raw = " ".join([str(t.get("name", "")), str(t.get("description", "") or ""),
+                    json.dumps(t.get("inputSchema") or {}, default=str)])
+    return raw + " \n " + _split_identifiers(raw)
+
+
+def _schema_descriptions(node, depth: int = 0) -> list[str]:
+    """Every 'description' / 'title' string anywhere in an inputSchema: these are read
+    by the calling model just like the tool description, so they can carry poison."""
+    if depth > 20:
+        return []
+    out: list[str] = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in ("description", "title") and isinstance(v, str):
+                out.append(v)
+            else:
+                out.extend(_schema_descriptions(v, depth + 1))
+    elif isinstance(node, list):
+        for v in node:
+            out.extend(_schema_descriptions(v, depth + 1))
+    return out
 
 
 _READONLY_NAME = re.compile(r"^(get|read|list|search|find|fetch|query|show|describe|"
                             r"lookup|summar|inspect|view|weather|calc)", re.I)
 
 
+_SIDE_EFFECT = re.compile(r"\b(delete|remove|drop|destroy|purge|wipe|truncate|write|update|"
+                          r"create|insert|modify|edit|set|put|patch|deploy|exec|execute|"
+                          r"run|kill|rotate|revoke|transfer|pay|charge|send|post|publish|"
+                          r"upload|email|notify|commit|push|merge|install|uninstall)\b",
+                          re.I)
+
+
+def _annotations(tool: dict) -> dict:
+    ann = tool.get("annotations")
+    return ann if isinstance(ann, dict) else {}
+
+
 def _is_readonly(tool: dict) -> bool:
-    ann = tool.get("annotations") or {}
-    if ann.get("readOnlyHint") is True:
-        return True
+    ann = _annotations(tool)
     if ann.get("destructiveHint") is True or ann.get("readOnlyHint") is False:
         return False
-    return bool(_READONLY_NAME.match(tool.get("name", "")))
+    if ann.get("readOnlyHint") is True:
+        return True
+    name = str(tool.get("name", ""))
+    if _SIDE_EFFECT.search(_split_identifiers(name)):
+        return False   # "get_and_delete_x" is not read-only just because it starts with get
+    return bool(_READONLY_NAME.match(name))
 
 
 def _first_string_arg(tool: dict):
@@ -105,37 +151,51 @@ def scan_mcp(endpoint, ctx: ScanContext | None = None, env=None, cwd=None,
         client = MCPHTTPClient(endpoint, headers=headers, timeout=timeout)
     else:
         client = MCPClient(endpoint, env=env, cwd=cwd, timeout=timeout)
-    tools = []
+    # The collector listens on the scanner's loopback; a remote server can't reach it.
+    egress_reachable = transport != "http" or _is_loopback_url(str(endpoint))
+    tools: list[dict] = []
     conn_error = None
     server_name = "mcp"
-    try:
-        client.start()
-        client.initialize()
-        server_name = "mcp:" + (client.server_info.get("name") or "server")
-        tools = [t for t in (client.list_tools() or []) if isinstance(t, dict) and t.get("name")]
-    except MCPError as e:
-        conn_error = str(e)
+    try:   # close the client (and reap the server) on ANY exception, not just MCPError
+        try:
+            client.start()
+            client.initialize()
+            server_name = "mcp:" + (client.server_info.get("name") or "server")
+            tools = [t for t in (client.list_tools() or [])
+                     if isinstance(t, dict) and isinstance(t.get("name"), str) and t["name"]]
+        except MCPError as e:
+            conn_error = str(e)
 
-    if conn_error:
-        results.append(_pr("MCP-00", "mcp-connection", "high",
-                           "MCP connection", "Connect and introspect the server.",
-                           "Ensure the server launches and speaks MCP over stdio.",
-                           False, error=conn_error))
-        client.close()
-        return ScanResult(target=server_name, started=started,
-                          duration_s=time.time() - t0, results=results)
-
-    try:
-      return _run_checks(client, tools, ctx, results, server_name, started, t0)
+        if conn_error:
+            results.append(_pr("MCP-00", "mcp-connection", "high",
+                               "MCP connection", "Connect and introspect the server.",
+                               "Ensure the server launches and speaks MCP over stdio.",
+                               False, error=conn_error))
+            return ScanResult(target=server_name, started=started,
+                              duration_s=time.time() - t0, results=results)
+        return _run_checks(client, tools, ctx, results, server_name, started, t0,
+                           egress_reachable=egress_reachable)
     finally:
         client.close()
 
 
-def _run_checks(client, tools, ctx, results, server_name, started, t0):
+def _is_loopback_url(url: str) -> bool:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _run_checks(client, tools, ctx, results, server_name, started, t0,
+                egress_reachable: bool = True):
     # ---- MCP-01: tool-description poisoning (static + intent) ----
     def _poisoned(t):
-        desc = t.get("description", "") or ""
-        return bool(_INJECTION.search(desc)) or _intent_score(desc)["flagged"]
+        texts = [t.get("description", "") or ""] + _schema_descriptions(t.get("inputSchema"))
+        return any(bool(_INJECTION.search(x)) or _intent_score(x)["flagged"]
+                   for x in texts if x)
     poisoned = [t for t in tools if _poisoned(t)]
     results.append(_pr(
         "MCP-01", "mcp-poisoning", "critical",
@@ -147,10 +207,10 @@ def _run_checks(client, tools, ctx, results, server_name, started, t0):
         "alert on changes.",
         vulnerable=bool(poisoned),
         excerpt=("poisoned tools: " + ", ".join(t["name"] for t in poisoned)
-                 if poisoned else "no injection markers in tool descriptions")))
+                 if poisoned else "no injection markers in tool descriptions or schemas")))
 
     # ---- MCP-02: dangerous capability exposure (static) ----
-    hits = {}
+    hits: dict[str, tuple[str, str, list[str]]] = {}
     for t in tools:
         blob = _tool_blob(t)
         for key, rx, sev, label in _CAP:
@@ -233,30 +293,64 @@ def _run_checks(client, tools, ctx, results, server_name, started, t0):
         vulnerable=bool(leaked_from), excerpt=excerpt or "no secrets returned by tools",
         latency_ms=int((time.time() - pt) * 1000)))
 
-    _confirm_egress(client, tools, ctx, results)
+    _confirm_egress(client, tools, ctx, results, reachable=egress_reachable)
 
     return ScanResult(target=server_name, started=started,
                       duration_s=time.time() - t0, results=results)
 
 
-_NET_TOOL = re.compile(r"\b(fetch|http|request|get_url|call|webhook|send|post|curl|download)\b",
-                       re.I)
+# fetch-only verbs: a tool that only RETRIEVES a URL. Sending/posting tools are never
+# invoked, since they may have side effects beyond the request to Redline's collector.
+_NET_TOOL = re.compile(r"\b(fetch|http|request|url|curl|download|browse|scrape|crawl|"
+                       r"webpage|link)\b", re.I)
+_NET_SURFACE = re.compile(r"\b(fetch|http|https|url|request|webhook|send|post|curl|download|"
+                          r"upload|browse)\b", re.I)
 
 
-def _confirm_egress(client, tools, ctx, results):
+def _egress_safe(tool: dict) -> bool:
+    """True only for a tool that is provably fetch-only: not annotated destructive or
+    non-read-only, and with no side-effect verb anywhere in its name or description."""
+    ann = _annotations(tool)
+    if ann.get("destructiveHint") is True or ann.get("readOnlyHint") is False:
+        return False
+    text = _split_identifiers(f"{tool.get('name', '')} {tool.get('description', '') or ''}")
+    if _SIDE_EFFECT.search(text):
+        return False
+    return ann.get("readOnlyHint") is True or bool(_NET_TOOL.search(text))
+
+
+def _confirm_egress(client, tools, ctx, results, reachable: bool = True):
     """Prove a secret can actually LEAVE via a tool, not just be spoken. Find a
-    network-capable tool, hand it a URL that Redline controls plus the planted
-    secret, and check whether the secret reaches the collector. Only Redline's own
-    loopback collector is ever targeted, so no third-party side effect occurs."""
-    net = next((t for t in tools if _NET_TOOL.search(t.get("name", "") + " "
-                                                     + (t.get("description", "") or ""))), None)
+    fetch-only tool, hand it a URL that Redline controls plus the planted secret, and
+    check whether the secret reaches the collector. Only Redline's own loopback
+    collector is targeted and only provably fetch-only tools are invoked, so no
+    third-party side effect occurs. When no tool can be safely exercised, or the server
+    can't reach the collector, the probe is reported as not run, never as clean."""
+    title = "Canary-confirmed exfiltration"
+    rem = "Deny outbound network from tools, or allowlist egress destinations."
+
+    def not_run(reason: str):
+        results.append(_pr("MCP-05", "mcp-exfil", "critical", title,
+                           "Whether a tool can send a planted secret to an external endpoint.",
+                           rem, vulnerable=False, error=f"not run: {reason}"))
+
+    surface = [t for t in tools if _NET_SURFACE.search(_split_identifiers(
+        f"{t.get('name', '')} {t.get('description', '') or ''}"))]
+    net = next((t for t in tools if _egress_safe(t) and _NET_TOOL.search(_split_identifiers(
+        f"{t.get('name', '')} {t.get('description', '') or ''}"))), None)
     if net is None:
-        results.append(_pr(
-            "MCP-05", "mcp-exfil", "critical",
-            "Canary-confirmed exfiltration",
-            "Whether a tool can send a planted secret to an external endpoint.",
-            "Deny outbound network from tools, or allowlist egress destinations.",
-            vulnerable=False, excerpt="no network-capable tool to test"))
+        if not surface:
+            results.append(_pr("MCP-05", "mcp-exfil", "critical", title,
+                               "Whether a tool can send a planted secret to an external "
+                               "endpoint.", rem, vulnerable=False,
+                               excerpt="no network-capable tool to test"))
+        else:
+            not_run("network-capable tools exist ("
+                    + ", ".join(t["name"] for t in surface[:5])
+                    + ") but none is provably read-only, so none was invoked")
+        return
+    if not reachable:
+        not_run("remote HTTP server cannot reach the scanner's loopback collector")
         return
     props = (net.get("inputSchema") or {}).get("properties") or {}
     url_arg = next((k for k in props if re.search(r"url|endpoint|uri", k, re.I)), None)         or _first_string_arg(net)

@@ -46,7 +46,7 @@ _DENY_CRITICAL = {"rules": [{"id": "block-critical", "if": {"severity": "critica
 
 BUILTIN_PROFILES = {
     "general": Profile(
-        "general", "The full suite for any LLM target.",
+        "general", "The core prompt-security classes for any LLM target (omit --profile to run the full suite).",
         ["injection", "jailbreak", "leakage", "control-token", "obfuscation"],
         _DENY_CRITICAL, _CORE_GOLDEN),
     "rag-chatbot": Profile(

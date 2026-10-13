@@ -31,13 +31,31 @@ _SHELL = re.compile(r"(\$\(|\bcurl\s+http|\bwget\s+http|rm\s+-rf|;\s*cat\s+/etc)
 _DATA_URI = re.compile(r"data:[^;]+;base64,", re.I)
 
 
+def _rest_of_object(text: str, start: int) -> str:
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            if depth == 0:
+                return text[start:i]
+            depth -= 1
+    return text[start:]
+
+
 def emitted_tool_call(resp: str) -> list[tuple[str, str]]:
     """Return (tool_name, args) for tool/function calls the model emitted."""
     out = []
-    for m in _TOOL_CALL.finditer(resp or ""):
+    text = resp or ""
+    for m in _TOOL_CALL.finditer(text):
         name = m.group(1) or m.group(3)
         if name:
-            out.append((name, m.group(2) or ""))
+            args = m.group(2)
+            if args is None:
+                # JSON-style call ("name": "x", "arguments": {...}): the arguments are
+                # the rest of the enclosing object, nested braces included
+                args = _rest_of_object(text, m.end())
+            out.append((name, args))
     return out
 
 

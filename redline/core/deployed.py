@@ -26,14 +26,19 @@ _CRED = re.compile(
     r"(sk-ant-[a-z0-9-]{12,}|sk-(?:proj|svcacct)?-?[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|"
     r"AIza[0-9A-Za-z_\-]{35}|hf_[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|"
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----|"
-    r"\b(?:api[_-]?key|secret|password|passwd|token|db_password)\b\s*[=:]\s*\S{6,})", re.I)
+    # key=value only when the value looks like a real secret (8+ chars mixing letters
+    # and digits), so "password: yourNewPass" and "token: <redacted>" don't fire
+    r"\b(?:api[_-]?key|secret|password|passwd|token|db_password)\b\s*[=:]\s*"
+    r"(?=[^\s<>]*\d)(?=[^\s<>]*[A-Za-z])[^\s<>]{8,})", re.I)
 # system-prompt disclosure: instruction-like phrasing an app would only emit if it
 # leaked its own prompt
 _SYSPROMPT = re.compile(
     r"(you are (a|an|the)\s+\w+.{0,60}(assistant|agent|bot|model)|"
     r"your (instructions|role|task) (are|is)\b|"
     r"you (must|should) (never|always|not)\b|"
-    r"(do not|never) (reveal|disclose|share) (your|the|these) (system )?(prompt|instructions)|"
+    # not after "I": "I never share the system prompt" is a refusal, not a disclosure
+    r"(?<!\bI )(?<!\bI'll )(do not|never) (reveal|disclose|share) (your|the|these) "
+    r"(system )?(prompt|instructions)|"
     r"here (are|is) my (instructions|system prompt|configuration))", re.I)
 
 

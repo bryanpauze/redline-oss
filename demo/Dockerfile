@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # asciinema records the terminal session; agg renders the cast to a GIF (no browser needed)
 RUN pip install --no-cache-dir asciinema
 RUN case "$TARGETARCH" in \
-      arm64) A=aarch64-unknown-linux-gnu ;; \
-      amd64) A=x86_64-unknown-linux-musl ;; \
-      *) A=x86_64-unknown-linux-musl ;; esac; \
+      arm64) A=aarch64-unknown-linux-gnu; S=2b4be407b97e00e1c313a41d154ced8fa3d02c560c8f47a0db4950a2576444c9 ;; \
+      *) A=x86_64-unknown-linux-musl; S=ddcbf6ca044c8ac3a434dcb9ee89fb9e3be87209982b7c2adb55f782e8f0f390 ;; esac; \
     curl -fsSL -o /usr/local/bin/agg \
       "https://github.com/asciinema/agg/releases/download/v1.9.0/agg-${A}" \
+    && echo "${S}  /usr/local/bin/agg" | sha256sum -c - \
     && chmod +x /usr/local/bin/agg
 
 WORKDIR /app

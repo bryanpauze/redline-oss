@@ -8,20 +8,22 @@ from ...core.report import render_comparison, render_html, render_json
 from ...core.runner import run_scan
 from ...core.sarif import to_sarif
 from ...core.target import OllamaTarget
-from ..shared import add_target_args, build_target, progress, write_json
+from ..shared import add_target_args, build_target, progress, write_json, write_text
 
 
 def emit(res, a) -> int:
     d = res.to_dict()
     if a.out:
-        with open(a.out, "w") as f:
-            f.write(render_html(res))
+        write_text(a.out, render_html(res))
     if a.json:
-        with open(a.json, "w") as f:
-            f.write(render_json(res))
+        write_text(a.json, render_json(res))
     if a.sarif:
-        write_json(a.sarif, to_sarif(d, anchor=a.sarif_anchor))
-    delta = bl.diff(d, bl.load(a.baseline)) if a.baseline else None
+        write_json(a.sarif, to_sarif(d, anchor=a.sarif_anchor or "redline.target"))
+    try:
+        delta = bl.diff(d, bl.load(a.baseline)) if a.baseline else None
+    except (OSError, ValueError) as e:
+        print(f"error: baseline {a.baseline}: {e}", file=sys.stderr)
+        return 2
     print()
     print(f"  Target : {res.target}")
     print(f"  Grade  : {res.grade()}   Risk score: {res.score()}/100"
@@ -36,7 +38,10 @@ def emit(res, a) -> int:
     for label, path in (("HTML", a.out), ("JSON", a.json), ("SARIF", a.sarif)):
         if path:
             print(f"  {label}: {path}")
+    if res.error_count:
+        print(f"  Errors : {res.error_count} probe(s) never reached the target")
     if res.inconclusive:
+        print("  INCONCLUSIVE: too many probes failed to reach the target to grade it")
         return 2
     return 1 if bl.should_fail(d, a.fail_on, delta) else 0
 
@@ -46,7 +51,8 @@ def cmd_scan(a) -> int:
         from ...core.mcp_scan import scan_mcp
         if not (a.command or a.url):
             sys.exit("error: --target mcp needs --command (stdio) or --url (http)")
-        res = scan_mcp(a.command or a.url)
+        res = (scan_mcp(a.url, transport="http") if a.url and not a.command
+               else scan_mcp(a.command))
         return emit(res, a)
 
     target = build_target(a)
@@ -55,7 +61,10 @@ def cmd_scan(a) -> int:
     only = None
     if a.profile:
         from ...core.profiles import get_profile
-        only = get_profile(a.profile).categories
+        try:
+            only = get_profile(a.profile).categories
+        except KeyError:
+            sys.exit(f"error: unknown profile {a.profile!r} (see: redline profiles)")
     from ...core.validator import build_judge
     from ...probes import ScanContext
     res = run_scan(target, ctx=ScanContext.random(), trials=a.trials,
@@ -72,8 +81,7 @@ def cmd_benchmark(a) -> int:
         t = 0.0 if a.trials <= 1 else 0.7
         results.append(run_scan(OllamaTarget(model=m, host=a.host, temperature=t),
                                 trials=a.trials))
-    with open(a.out, "w") as f:
-        f.write(render_comparison(results))
+    write_text(a.out, render_comparison(results))
     print(f"\n  Benchmark report: {a.out}")
     for r in results:
         print(f"    {r.target:30} {r.grade()}  {r.score():3}/100  {len(r.fired)} vuln")
@@ -93,7 +101,8 @@ def register(sub) -> None:
     s.add_argument("--out", default=None, help="write HTML report")
     s.add_argument("--json", default=None, help="write JSON report")
     s.add_argument("--sarif", default=None, help="write SARIF 2.1.0 (GitHub code scanning)")
-    s.add_argument("--sarif-anchor", default=None)
+    s.add_argument("--sarif-anchor", default="redline.target",
+                   help="repo file that SARIF alerts attach to")
     s.add_argument("--baseline", default=None, help="diff against a previous scan")
     s.add_argument("--fail-on", choices=["any", "new", "none"], default="any")
     s.add_argument("--quiet", action="store_true")

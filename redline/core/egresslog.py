@@ -130,7 +130,7 @@ def _extract(line: str) -> tuple[str | None, str | None, str | None]:
     m = re.search(r"CONNECT\s+([a-z0-9][a-z0-9.\-]+):\d+", line, re.I)
     if m:
         return m.group(1), None, _leading_ip(line)
-    # dnsmasq / BIND "query[A] host.name from 10.0.0.5"
+    # dnsmasq / BIND "query[A] host.name from 192.0.2.5"
     m = re.search(r"query(?:\[[A-Z]+\])?[: ]+([a-z0-9][a-z0-9.\-]+\.[a-z]{2,})", line, re.I)
     if m:
         actor = None

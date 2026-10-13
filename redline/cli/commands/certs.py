@@ -12,6 +12,10 @@ def cmd_exfil_cert(a) -> int:
     if a.tools:
         with open(a.tools) as f:
             tools = json.load(f)
+        if isinstance(tools, dict):   # accept an MCP tools/list result too
+            tools = tools.get("tools", [])
+        if not isinstance(tools, list):
+            sys.exit("error: --tools must be a JSON list of tools (or {\"tools\": [...]})")
         doc = certify_graph(tools, mitigations=a.mitigation)
     elif a.mcp_url:
         doc = certify_mcp(a.mcp_url, "http", mitigations=a.mitigation)
@@ -19,7 +23,9 @@ def cmd_exfil_cert(a) -> int:
         doc = certify_mcp(a.mcp_command, "stdio", mitigations=a.mitigation)
     else:
         sys.exit("error: pass --tools, --mcp-command, or --mcp-url")
-    print(f"\n  Exfiltration certificate for {doc['target']}  (signed)")
+    signed = (doc.get("signature") or {}).get("signed")
+    print(f"\n  Exfiltration certificate for {doc['target']}  "
+          + ("(signed, HMAC-SHA256)" if signed else "(UNSIGNED: set REDLINE_AUDIT_KEY to sign)"))
     print(f"  VERDICT: {doc['status'].upper()}\n  {doc['verdict']}")
     if a.out:
         write_json(a.out, doc)
@@ -46,6 +52,6 @@ def register(sub) -> None:
     xc.add_argument("--out", default=None)
     xc.set_defaults(func=cmd_exfil_cert)
 
-    ve = sub.add_parser("verify-evidence", help="verify a signed certificate or bundle")
+    ve = sub.add_parser("verify-evidence", help="verify a signed certificate (key: REDLINE_AUDIT_KEY)")
     ve.add_argument("path")
     ve.set_defaults(func=cmd_verify_evidence)

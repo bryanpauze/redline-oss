@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in Redline behaves incorrectly
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Redline version
+      description: Output of `redline --version`
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and OS
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: Paste the output. Remove API keys and any real secrets first.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - False positive (a probe fired but the target didn't fail)
+        - False negative (the target failed but no probe fired)
+        - Crash or error
+        - Other

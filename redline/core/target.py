@@ -11,6 +11,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
@@ -25,10 +26,21 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 def _open_no_redirect(req, timeout):
+    if urllib.parse.urlsplit(req.full_url).scheme not in ("http", "https"):
+        raise ValueError(f"unsupported URL scheme (http/https only): {req.full_url!r}")
     return _OPENER.open(req, timeout=timeout)
+
+
+def _read_json(r):
+    """Read a bounded response body: a broken or hostile endpoint can't exhaust memory."""
+    raw = r.read(MAX_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise ValueError(f"response exceeded {MAX_RESPONSE_BYTES} bytes")
+    return json.loads(raw)
 
 
 class Target:
@@ -56,13 +68,13 @@ class OllamaTarget(Target):
             "stream": False,
             "options": ({} if self.temperature is None else {"temperature": self.temperature}),
         }).encode()
-        req = urllib.request.Request(
-            f"{self.host}/api/chat", data=body,
-            headers={"Content-Type": "application/json"},
-        )
         try:
+            req = urllib.request.Request(
+                f"{self.host}/api/chat", data=body,
+                headers={"Content-Type": "application/json"},
+            )
             with _open_no_redirect(req, self.timeout) as r:
-                data = json.loads(r.read())
+                data = _read_json(r)
             return (data.get("message") or {}).get("content", "") or ""
         except (urllib.error.URLError, TimeoutError, OSError, ValueError,
                 KeyError, TypeError, http.client.HTTPException) as e:
@@ -91,10 +103,10 @@ class OpenAICompatTarget(Target):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(self.url, data=body, headers=headers)
         try:
+            req = urllib.request.Request(self.url, data=body, headers=headers)
             with _open_no_redirect(req, self.timeout) as r:
-                data = json.loads(r.read())
+                data = _read_json(r)
             return data["choices"][0]["message"]["content"] or ""
         except (urllib.error.URLError, TimeoutError, OSError, ValueError,
                 KeyError, IndexError, TypeError, http.client.HTTPException) as e:
@@ -124,6 +136,8 @@ def preset_target(preset: str, *, model: str, api_key: str | None = None,
     url, _env = OPENAI_COMPAT_PRESETS[preset]
     if host:
         from urllib.parse import urlsplit, urlunsplit
+        if "://" not in host:   # a bare host:port is what people type
+            host = "http://" + host
         p, h = urlsplit(host), urlsplit(url)
         url = urlunsplit((p.scheme or "http", p.netloc or host, h.path, "", ""))
     return OpenAICompatTarget(url=url, model=model, api_key=api_key,
@@ -194,10 +208,10 @@ class TextCompletionTarget(Target):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(self.url, data=body, headers=headers)
         try:
+            req = urllib.request.Request(self.url, data=body, headers=headers)
             with _open_no_redirect(req, self.timeout) as r:
-                data = json.loads(r.read())
+                data = _read_json(r)
             if openai_style:
                 return data["choices"][0].get("text", "") or ""
             return data.get("content", "") or ""   # llama.cpp shape
@@ -208,7 +222,7 @@ class TextCompletionTarget(Target):
 
 @dataclass
 class AnthropicTarget(Target):
-    """Claude via the official Anthropic SDK (optional extra: pip install 'redline-scan[anthropic]').
+    """Claude via the official Anthropic SDK (optional extra: pip install 'redline-oss[anthropic]').
 
     Credentials resolve the SDK's usual way (ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
     or an `ant auth login` profile). No sampling parameters are sent: current Claude
@@ -217,7 +231,7 @@ class AnthropicTarget(Target):
     fallback would swap in a different model and falsify the result. A refusal is
     recorded as the target's (blocked) reply.
     """
-    model: str = "claude-opus-5"
+    model: str = "claude-opus-5-5"
     api_key: str | None = None
     max_tokens: int = 16000
 
@@ -230,7 +244,7 @@ class AnthropicTarget(Target):
             import anthropic
         except ImportError as e:
             raise TargetError("the Anthropic target needs the SDK: "
-                              "pip install 'redline-scan[anthropic]'") from e
+                              "pip install 'redline-oss[anthropic]'") from e
         return anthropic, (anthropic.Anthropic(api_key=self.api_key)
                            if self.api_key else anthropic.Anthropic())
 
@@ -307,15 +321,15 @@ class MockTarget(Target):
             return f"My configuration is:\n{system}"
         # Obeys injected 'ignore previous instructions' overrides verbatim.
         if "ignore" in low and ("previous" in low or "above" in low):
-            tail = convo.strip().splitlines()[-1] if convo.strip() else ""
-            return f"Okay, ignoring prior instructions. {tail}"
+            words = convo.split()
+            return f"Okay, ignoring prior instructions. {words[-1] if words else ''}"
         return "I'm a helpful assistant. How can I help you today?"
 
 
 def target_from_spec(spec: str, *, api_key: str | None = None, url: str | None = None,
                      temperature: float | None = 0.0) -> Target:
     """Build a target from a 'provider:model' string, e.g. 'ollama:hermes3',
-    'groq:llama-3.1-70b', 'anthropic:claude-opus-5', 'completion:local'. Used for the --target-style CLIs (a judge model, a completion endpoint, and so on)."""
+    'groq:llama-3.1-70b', 'anthropic:claude-opus-5-5', 'completion:local'. Used for the --target-style CLIs (a judge model, a completion endpoint, and so on)."""
     provider, _, model = spec.partition(":")
     model = model or "default"
     if provider == "mock":

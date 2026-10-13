@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:   # the release workflow reuses this as its test gate
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -31,6 +34,4 @@ jobs:
       - name: Smoke — coverage matrix
         run: redline coverage
       - name: Smoke — MCP exfil certificate
-        env:
-          REDLINE_ENABLE_MCP_EXEC: "1"
         run: redline exfil-cert --mcp-command "python3 -m redline.fixtures.vuln_mcp_server" || test $? -eq 1

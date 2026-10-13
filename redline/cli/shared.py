@@ -38,7 +38,7 @@ def build_target(a):
                                   api_key=a.api_key or os.environ.get("OPENAI_API_KEY"),
                                   temperature=t)
     if a.target == "anthropic":
-        return AnthropicTarget(model=a.model or "claude-opus-5", api_key=a.api_key)
+        return AnthropicTarget(model=a.model or "claude-opus-5-5", api_key=a.api_key)
     if a.target == "http":
         if not a.url:
             sys.exit("error: --url is required for --target http")
@@ -67,9 +67,17 @@ def progress(i, n, p):
     print(f"  [{i}/{n}] {p.id} {p.title}...", file=sys.stderr)
 
 
+def write_text(path, text: str) -> None:
+    """Write an output file, creating its parent directory (reports/x.html just works)."""
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
 def write_json(path, obj) -> None:
-    with open(path, "w") as f:
-        json.dump(obj, f, indent=2)
+    write_text(path, json.dumps(obj, indent=2))
 
 
 def add_target_args(s: argparse.ArgumentParser) -> None:

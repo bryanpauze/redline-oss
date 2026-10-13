@@ -41,7 +41,11 @@ def sign_document(doc: dict) -> dict:
 
 def verify_document(doc: dict, key_hex: str | None = None) -> dict:
     """Recompute the signature over any signed document. Returns {ok, reason}."""
+    if not isinstance(doc, dict):
+        return {"ok": False, "reason": "not a signed Redline document"}
     sig = doc.get("signature") or {}
+    if not isinstance(sig, dict) or not isinstance(sig.get("value") or "", str):
+        return {"ok": False, "reason": "malformed signature block"}
     key = (key_hex or os.environ.get("REDLINE_AUDIT_KEY") or "").encode("utf-8")
     if not sig.get("signed"):
         return {"ok": False, "reason": "document is unsigned"}

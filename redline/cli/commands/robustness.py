@@ -17,6 +17,11 @@ def cmd_covert(a) -> int:
 def cmd_fingerprint(a) -> int:
     from ...core.fingerprint import fingerprint
     r = fingerprint(build_target(a))
+    if r.get("inconclusive") or r.get("errors"):
+        errs = r.get("errors")
+        print(f"\n  Target: {r['target']}\n  Defense class: INCONCLUSIVE\n"
+              f"  probes failed to reach the target: {errs}")
+        return 2
     print(f"\n  Target: {r['target']}\n  Defense class: {r['defense_class']}\n  {r['reason']}")
     return 0
 

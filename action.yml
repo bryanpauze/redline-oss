@@ -7,14 +7,14 @@ branding:
 
 inputs:
   target:
-    description: "mock | ollama | openai | anthropic | http | mcp"
+    description: "mock | ollama | openai | anthropic | http | mcp | vllm | llamacpp | tgi | lmstudio | together | groq | openrouter | fireworks | deepinfra | completion"
     required: true
   model:
     description: Model name for the target
     required: false
     default: ""
   url:
-    description: Endpoint URL (target=http)
+    description: Endpoint URL (target=http or completion; MCP over HTTP with target=mcp; overrides a preset host)
     required: false
     default: ""
   command:

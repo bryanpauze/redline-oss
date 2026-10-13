@@ -74,12 +74,15 @@ def fingerprint(target: Target, ctx: ScanContext | None = None) -> dict:
         if err:
             errors[label] = err
     defense_class, reason = classify(signals)
+    if errors:   # a rung that never ran reads as "didn't leak": don't classify on it
+        defense_class = "INCONCLUSIVE"
+        reason = f"{len(errors)} of {len(_LADDER)} ladder probes failed to reach the target"
     return {
         "target": target.name,
         "defense_class": defense_class,
         "reason": reason,
         "signals": signals,
         "errors": errors,
-        "inconclusive": len(errors) == len(_LADDER),
+        "inconclusive": bool(errors),
         "duration_s": round(time.time() - t0, 2),
     }

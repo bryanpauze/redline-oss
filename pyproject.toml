@@ -9,6 +9,10 @@ authors = [{ name = "Bryan Pauze" }]
 keywords = ["llm", "security", "prompt-injection", "jailbreak", "red-team", "mcp", "ai-security", "oss"]
 dependencies = []   # stdlib only, on purpose
 classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Operating System :: POSIX",
+  "Operating System :: MacOS",
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -22,6 +26,8 @@ classifiers = [
 [project.urls]
 Repository = "https://github.com/bryanpauze/redline-oss"
 Issues = "https://github.com/bryanpauze/redline-oss/issues"
+Changelog = "https://github.com/bryanpauze/redline-oss/blob/main/CHANGELOG.md"
+Security = "https://github.com/bryanpauze/redline-oss/security/policy"
 
 [project.scripts]
 redline = "redline.cli:main"
@@ -61,7 +67,8 @@ skips = [
   "B105",  # "hardcoded passwords" are probe/golden attack payloads; secrets -> detect-secrets
   "B110",  # try/except/pass: a probe failure must never abort a scan
   "B311",  # random is for adversarial fuzzing/seeding, never for crypto
-  "B310",  # urllib is deliberate outbound to targets; SSRF handled by egress.guard_resolved
+  "B310",  # urllib is deliberate outbound to operator-chosen targets; schemes are limited to
+           # http/https and redirects are refused (target.py, mcp_client.py)
   "B404",  # subprocess import is required to launch stdio MCP servers
   "B603",  # subprocess is called with shell=False and an argv list, by design
   "B613",  # covert-channel probes embed zero-width/homoglyph unicode on purpose

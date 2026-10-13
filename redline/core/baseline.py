@@ -15,14 +15,22 @@ def _vuln_ids(scan: dict) -> set[str]:
 
 def load(path: str) -> dict:
     with open(path) as f:
-        return json.load(f)
+        doc = json.load(f)
+    if not isinstance(doc, dict) or not isinstance(doc.get("results"), list):
+        raise ValueError("not a Redline JSON report (no 'results' list)")
+    return doc
+
+
+def _errored_ids(scan: dict) -> set[str]:
+    return {r["id"] for r in scan.get("results", []) if r.get("error")}
 
 
 def diff(current: dict, baseline: dict) -> dict:
     cur, base = _vuln_ids(current), _vuln_ids(baseline)
     return {
         "new": sorted(cur - base),
-        "fixed": sorted(base - cur),
+        # a probe that errored this run wasn't measured, so it isn't "fixed"
+        "fixed": sorted(base - cur - _errored_ids(current)),
         "still_open": sorted(cur & base),
         "baseline_target": baseline.get("target"),
         "baseline_started": baseline.get("started"),

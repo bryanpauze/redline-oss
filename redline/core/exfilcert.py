@@ -53,14 +53,33 @@ _ROLE_PATTERNS = {
 }
 
 
+ALL_ROLES = [INGRESS, PRIVATE, EXTERNAL_SINK, EXEC_SINK]
+
+
+def _split_identifiers(text: str) -> str:
+    """fetchUrl / get_credentials / slack-post -> 'fetch Url' / 'get credentials' /
+    'slack post', so the word-boundary role patterns see identifier parts."""
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
+    return re.sub(r"[_\-.]+", " ", text)
+
+
 def label_tool(tool: dict) -> list[str]:
     """Assign capability roles to a tool from its name, description, and schema.
-    Errs toward labeling (a tool that matches a role is given it), for soundness."""
+
+    Errs toward labeling, for soundness: a tool that matches a role is given it, and a
+    tool the keyword taxonomy can't place at all is assumed capable of EVERY role
+    (an unknown tool could be any of them). An operator who knows better declares the
+    roles explicitly with a "redline_roles" list on the tool entry."""
     import json as _j
+    declared = tool.get("redline_roles")
+    if isinstance(declared, list):
+        return [r for r in ALL_ROLES if r in declared]
     blob = " ".join([tool.get("name", ""), tool.get("description", "") or "",
                      _j.dumps(tool.get("inputSchema") or tool.get("input_schema") or {})])
-    roles = [r for r, rx in _ROLE_PATTERNS.items() if rx.search(blob)]
-    return roles
+    views = (blob, _split_identifiers(blob))
+    roles = [r for r, rx in _ROLE_PATTERNS.items() if any(rx.search(v) for v in views)]
+    return roles or list(ALL_ROLES)
 
 
 def _witnesses(tools: list[dict], role: str) -> list[str]:
@@ -68,14 +87,16 @@ def _witnesses(tools: list[dict], role: str) -> list[str]:
 
 
 def certify_graph(tools: list[dict], *, untrusted_input: bool = True,
-                  private_in_context: bool = False, mitigations: list[str] | None = None,
+                  private_in_context: bool = True, mitigations: list[str] | None = None,
                   target: str = "agent") -> dict:
     """Certify whether the tool graph can exfiltrate.
 
     untrusted_input: does any untrusted content enter the agent at all? Default True
         (the safe assumption). Set False only if the operator asserts a closed agent
         with no third-party/user-controlled content.
-    private_in_context: is any private data reachable in the agent's context/tools?
+    private_in_context: is any private data reachable in the agent's context (the
+        system prompt, the conversation, retrieved data)? Default True, the safe
+        assumption; declare the 'no_private_data' mitigation to assert otherwise.
     mitigations: declared controls that soundly cut a trifecta leg. Recognized:
         'no_untrusted_input'  - asserts no untrusted content reaches the model
         'no_private_data'     - asserts no private data is in scope
@@ -86,6 +107,9 @@ def certify_graph(tools: list[dict], *, untrusted_input: bool = True,
         'human_approval_sinks'- every sink call requires human approval (cuts the sink leg)
     """
     mit = set(mitigations or [])
+    # work on copies (never mutate the caller's tool list) and skip malformed entries
+    tools = [dict(t, name=str(t["name"])) for t in tools
+             if isinstance(t, dict) and t.get("name") not in (None, "")]
     for t in tools:
         t["_roles"] = label_tool(t)
 
@@ -152,11 +176,11 @@ def certify_graph(tools: list[dict], *, untrusted_input: bool = True,
         "soundness": (
             "Sound over this tool labeling under the conservative assumption that the "
             "agent context is a fully-connected medium (any tool output may influence "
-            "any later tool call). Over-approximates: may over-block, never falsely "
-            "certifies a leaky agent safe. Not valid if the labels or declarations are wrong."),
+            "any later tool call). Labels come from a keyword taxonomy over each tool's "
+            "name, description, and schema; a tool it cannot place is assumed capable of "
+            "every role. Over-approximates: may over-block. Not valid if a tool's "
+            "declared redline_roles, its description, or the declared mitigations are wrong."),
     }
-    for t in tools:
-        t.pop("_roles", None)
     return sign_document(doc)
 
 

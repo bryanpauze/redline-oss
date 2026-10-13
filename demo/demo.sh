@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
-export REDLINE_ENABLE_MCP_EXEC=1 TERM=xterm-256color
+export REDLINE_AUDIT_KEY=demo-signing-key TERM=xterm-256color
 R=$'\033[38;5;203m'; D=$'\033[38;5;245m'; C=$'\033[38;5;51m'; B=$'\033[1m'; X=$'\033[0m'
 sec(){ printf "\n${C}${B}▸ %s${X}\n" "$1"; sleep .6; }
 run(){ printf "${D}\$ ${X}${B}%s${X}\n" "$1"; sleep .4; eval "$1" || true; sleep 1.2; }

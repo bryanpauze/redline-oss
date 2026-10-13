@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
+import stat
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -155,13 +157,38 @@ def _rel(root: str, path: str) -> str:
     return os.path.relpath(path, root)
 
 
-def _read_text(path: str) -> str | None:
+def _regular_size(path: str, root: str | None = None) -> int | None:
+    """Size of `path` if it is a regular file we may read, else None.
+
+    The repository is untrusted: a FIFO named x.py would hang a read forever, a
+    symlink to /dev/zero reports size 0 then never ends, and a symlinked .env can
+    point outside the tree. Only regular files are read, and a symlink is followed
+    only when it resolves to a regular file inside `root`."""
     try:
-        if os.path.getsize(path) > MAX_TEXT_BYTES:
+        st = os.lstat(path)
+        if stat.S_ISLNK(st.st_mode):
+            if root is None:
+                return None
+            real = os.path.realpath(path)
+            real_root = os.path.realpath(root)
+            if os.path.commonpath([real, real_root]) != real_root:
+                return None
+            st = os.stat(real)
+        if not stat.S_ISREG(st.st_mode):
             return None
+        return st.st_size
+    except (OSError, ValueError):
+        return None
+
+
+def _read_text(path: str, root: str | None = None) -> str | None:
+    size = _regular_size(path, root)
+    if size is None or size > MAX_TEXT_BYTES:
+        return None
+    try:
         with open(path, "rb") as f:
-            raw = f.read()
-        if b"\x00" in raw[:4096]:
+            raw = f.read(MAX_TEXT_BYTES + 1)   # bounded even if the file grew
+        if len(raw) > MAX_TEXT_BYTES or b"\x00" in raw[:4096]:
             return None
         return raw.decode("utf-8", "ignore")
     except OSError:
@@ -249,10 +276,28 @@ def _scan_code(inv: Inventory, rel: str, text: str, ext: str):
 _UNPINNED_RUNNERS = {"npx", "bunx", "pnpx", "uvx", "pipx"}
 
 
+def _str_field(cfg: dict, *keys: str) -> str:
+    for k in keys:
+        v = cfg.get(k)
+        if isinstance(v, str) and v:
+            return v
+    return ""
+
+
+def _args_field(cfg: dict) -> list[str]:
+    args = cfg.get("args")
+    return [str(a) for a in args] if isinstance(args, list) else []
+
+
+def _env_field(cfg: dict) -> dict:
+    env = cfg.get("env")
+    return env if isinstance(env, dict) else {}
+
+
 def _mcp_risks(name: str, cfg: dict, rel: str) -> list[Finding]:
     out = []
-    cmd = cfg.get("command") or ""
-    args = [str(a) for a in (cfg.get("args") or [])]
+    cmd = _str_field(cfg, "command")
+    args = _args_field(cfg)
     base = os.path.basename(cmd)
     if base in _UNPINNED_RUNNERS:
         pkgs = [a for a in args if not a.startswith("-")]
@@ -262,14 +307,14 @@ def _mcp_risks(name: str, cfg: dict, rel: str) -> list[Finding]:
             out.append(Finding("high", f"MCP server '{name}' runs an unpinned package",
                                f"`{base} {pkg}` fetches whatever version is latest at launch. "
                                "Pin an exact version so a compromised release can't slip in.", rel))
-    for k, v in (cfg.get("env") or {}).items():
+    for k, v in _env_field(cfg).items():
         sv = str(v)
-        if sv and not sv.startswith("${") and re.search(r"KEY|TOKEN|SECRET|PASSWORD", k, re.I) \
+        if sv and not sv.startswith("${") and re.search(r"KEY|TOKEN|SECRET|PASSWORD", str(k), re.I) \
                 and len(sv) >= 12:
             out.append(Finding("critical", f"MCP server '{name}' has a literal secret in {k}",
                                "Secrets in MCP config files end up in dotfiles and backups. "
                                "Reference an environment variable instead.", rel))
-    url = cfg.get("url") or cfg.get("serverUrl") or ""
+    url = _str_field(cfg, "url", "serverUrl")
     if url.startswith("http://") and not re.match(r"http://(localhost|127\.|\[::1\])", url):
         out.append(Finding("medium", f"MCP server '{name}' uses plaintext HTTP",
                            "Tool calls and results cross the network unencrypted. Use HTTPS.", rel))
@@ -287,29 +332,36 @@ def _scan_mcp_config(inv: Inventory, rel: str, text: str):
         data = json.loads(text)
     except json.JSONDecodeError:
         return
+    if not isinstance(data, dict):
+        return
     servers = data.get("mcpServers") or data.get("servers") or {}
     if not isinstance(servers, dict):
         return
     for name, cfg in servers.items():
         if not isinstance(cfg, dict):
             continue
-        transport = "http" if (cfg.get("url") or cfg.get("serverUrl")) else "stdio"
+        name = str(name)
+        url = _str_field(cfg, "url", "serverUrl")
+        command = _str_field(cfg, "command")
+        args = _args_field(cfg)
+        transport = "http" if url else "stdio"
         entry = {"name": name, "config_file": rel, "transport": transport,
-                 "command": cfg.get("command"), "args": cfg.get("args") or [],
-                 "url": cfg.get("url") or cfg.get("serverUrl"),
-                 "env_keys": sorted((cfg.get("env") or {}).keys())}
-        if transport == "stdio" and cfg.get("command"):
-            entry["scan_hint"] = "redline scan --target mcp --command " + json.dumps(
-                " ".join([cfg["command"]] + [str(a) for a in entry["args"]]))
+                 "command": command or None, "args": args, "url": url or None,
+                 "env_keys": sorted(str(k) for k in _env_field(cfg))}
+        if transport == "stdio" and command:
+            # the config is untrusted: quote for the shell so a "$(...)" in it stays
+            # inert text when the user pastes the hint
+            entry["scan_hint"] = "redline scan --target mcp --command " + shlex.quote(
+                shlex.join([command, *args]))
         risks = _mcp_risks(name, cfg, rel)
         entry["risks"] = [r.title for r in risks]
         inv.mcp_servers.append(entry)
         inv.findings.extend(risks)
 
 
-def _scan_prompt_intent(inv: Inventory, rel: str, path: str):
+def _scan_prompt_intent(inv: Inventory, rel: str, path: str, root: str | None = None):
     from .intent import score as _score
-    text = _read_text(path)
+    text = _read_text(path, root)
     if not text:
         return
     for para in re.split(r"\n\s*\n", text):
@@ -331,10 +383,9 @@ def build_inventory(root: str) -> Inventory:
             path = os.path.join(dirpath, fn)
             rel = _rel(root, path)
             ext = os.path.splitext(fn)[1].lower()
-            try:
-                size = os.path.getsize(path)
-            except OSError:
-                continue
+            size = _regular_size(path, root)
+            if size is None:
+                continue   # FIFO, device, socket, or a symlink leaving the tree
             if ext in WEIGHT_EXT or (ext == ".bin" and size > 10_000_000):
                 inv.artifacts.append({"file": rel, "type": "model-weights", "bytes": size})
                 continue
@@ -345,13 +396,13 @@ def build_inventory(root: str) -> Inventory:
             if ext in PROMPT_EXT or ("prompts" in parts and ext in {".txt", ".md", ".j2", ".jinja",
                                                                      ".jinja2", ".yaml", ".yml"}):
                 inv.prompts.append({"file": rel, "bytes": size})
-                _scan_prompt_intent(inv, rel, path)
+                _scan_prompt_intent(inv, rel, path, root)
             is_manifest = fn in {"package.json", "pyproject.toml", "Pipfile", "setup.cfg", "go.mod",
                                  "Gemfile", "Cargo.toml"} or (fn.startswith("requirements")
                                                              and fn.endswith(".txt"))
             if not (ext in CODE_EXT or ext in CONFIG_EXT or is_manifest or fn.startswith(".env")):
                 continue
-            text = _read_text(path)
+            text = _read_text(path, root)
             if text is None:
                 continue
             inv.files_scanned += 1
