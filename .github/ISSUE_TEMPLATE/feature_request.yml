@@ -1,0 +1,15 @@
+name: Feature or probe request
+description: Suggest a new probe, target adapter, or feature
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What should Redline do?
+      description: For a probe, describe the attack class, how a canary would detect it, and any public reference (paper, advisory, OWASP/ATLAS id).
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter?

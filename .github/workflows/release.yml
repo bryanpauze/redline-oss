@@ -1,0 +1,39 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches version
+        run: |
+          V=$(python -c "import redline; print(redline.__version__)")
+          T="${GITHUB_REF_NAME#v}"
+          test "$V" = "$T" || { echo "tag $T != version $V"; exit 1; }
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+  pypi:
+    # Trusted publishing (no API token). One-time setup: register this repo +
+    # workflow (release.yml, environment "pypi") as a trusted publisher for the
+    # "redline-oss" project on PyPI, then set the repo variable PYPI_PUBLISH=true.
+    needs: release
+    if: vars.PYPI_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
